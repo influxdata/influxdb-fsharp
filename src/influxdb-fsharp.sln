@@ -14,6 +14,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".nuget", ".nuget", "{192BCB
 		.nuget\NuGet.targets = .nuget\NuGet.targets
 	EndProjectSection
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "InfluxDB.FSharp.IntegrationTests", "InfluxDB.FSharp.IntegrationTests\InfluxDB.FSharp.IntegrationTests.fsproj", "{99ABE943-66C2-48D1-9217-A58B245C0F98}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -28,6 +30,10 @@ Global
 		{DF6C06F0-8B0F-415C-80F8-D73B8874081A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DF6C06F0-8B0F-415C-80F8-D73B8874081A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DF6C06F0-8B0F-415C-80F8-D73B8874081A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{99ABE943-66C2-48D1-9217-A58B245C0F98}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{99ABE943-66C2-48D1-9217-A58B245C0F98}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{99ABE943-66C2-48D1-9217-A58B245C0F98}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{99ABE943-66C2-48D1-9217-A58B245C0F98}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

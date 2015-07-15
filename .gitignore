@@ -3,3 +3,4 @@ obj/
 src/packages/
 !packages/repositories.config
 *.suo
+.vagrant/
