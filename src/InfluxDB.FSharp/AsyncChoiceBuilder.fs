@@ -1,11 +1,10 @@
 ﻿namespace InfluxDB.FSharp
 
-[<Sealed>]
-type AsyncChoiceBuilder () =
-    member __.Return value : Async<Choice<'T, 'Error>> =
+type internal AsyncChoiceBuilder () =
+    member inline __.Return value : Async<Choice<'T, 'Error>> =
         async.Return (Choice1Of2 value)
 
-    member __.ReturnFrom (asyncChoice : Async<Choice<'T, 'Error>>) =
+    member inline __.ReturnFrom (asyncChoice : Async<Choice<'T, 'Error>>) =
         asyncChoice
 
     member inline __.ReturnFrom (choice : Choice<'T, 'Error>) : Async<Choice<'T, 'Error>> =
@@ -17,7 +16,7 @@ type AsyncChoiceBuilder () =
     member inline __.Delay (generator : unit -> Async<Choice<'T, 'Error>>) : Async<Choice<'T, 'Error>> =
         async.Delay generator
 
-    member __.Combine (r1, r2) : Async<Choice<'T, 'Error>> =
+    member inline __.Combine (r1, r2) : Async<Choice<'T, 'Error>> =
         async {
             let! r1' = r1
             match r1' with
@@ -27,7 +26,7 @@ type AsyncChoiceBuilder () =
                 return! r2
         }
 
-    member __.Bind (value : Async<Choice<'T, 'Error>>, binder : 'T -> Async<Choice<'U, 'Error>>) : Async<Choice<'U, 'Error>> =
+    member inline __.Bind (value : Async<Choice<'T, 'Error>>, binder : 'T -> Async<Choice<'U, 'Error>>) : Async<Choice<'U, 'Error>> =
         async {
             let! value' = value
             match value' with
@@ -62,7 +61,7 @@ type AsyncChoiceBuilder () =
         else
             this.Zero ()
 
-    member this.For (sequence : seq<_>, body : 'T -> Async<Choice<unit, 'Error>>) =
+    member inline this.For (sequence : seq<_>, body : 'T -> Async<Choice<unit, 'Error>>) =
         this.Using (sequence.GetEnumerator (), fun enum ->
             this.While (
                 enum.MoveNext,

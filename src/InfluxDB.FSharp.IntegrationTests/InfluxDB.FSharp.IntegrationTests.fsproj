@@ -61,6 +61,7 @@
     <Content Include="packages.config" />
     <Content Include="app.config" />
     <None Include="Vagrantfile" />
+    <Compile Include="TestUtils.fs" />
     <Compile Include="Tests.fs" />
   </ItemGroup>
   <ItemGroup>
@@ -77,6 +78,11 @@
     <Reference Include="System.Numerics" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\InfluxDB.FSharp.UnitTests\InfluxDB.FSharp.UnitTests.fsproj">
+      <Name>InfluxDB.FSharp.UnitTests</Name>
+      <Project>{df6c06f0-8b0f-415c-80f8-d73b8874081a}</Project>
+      <Private>True</Private>
+    </ProjectReference>
     <ProjectReference Include="..\InfluxDB.FSharp\InfluxDB.FSharp.fsproj">
       <Name>InfluxDB.FSharp</Name>
       <Project>{a7a43714-99fd-4cc1-a078-3c922abe33c0}</Project>

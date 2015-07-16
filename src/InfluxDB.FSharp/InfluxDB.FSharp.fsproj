@@ -54,7 +54,8 @@
     <Content Include="packages.config" />
     <Content Include="app.config" />
     <Compile Include="InternalsVisibleTo.fs" />
-    <Compile Include="AsyncChoice.fs" />
+    <Compile Include="AsyncChoiceBuilder.fs" />
+    <Compile Include="ChoiceBuilder.fs" />
     <Compile Include="Prelude.fs" />
     <Compile Include="Client.fs" />
   </ItemGroup>
@@ -70,6 +71,8 @@
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Numerics" />
+    <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.Xml" />
   </ItemGroup>
   <Import Project="$(SolutionDir)\.nuget\NuGet.targets" Condition="Exists('$(SolutionDir)\.nuget\NuGet.targets')" />
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
