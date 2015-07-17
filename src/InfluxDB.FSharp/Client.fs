@@ -49,7 +49,6 @@ type FieldValue =
     | Double of double
     | String of string
     | Bool of bool
-    | Bytes of byte[]
 
 type Point =
     { Measurement: string
@@ -197,13 +196,15 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
     // todo sort tags by keys for perfomance (see docs)
     // todo check point has at least one field
     // todo double to string should have at least one 0 after .
-    // todo encode booleans as 't' and 'f' for perfomance
     // todo surround string field values with " with escaping
     // todo rewrite with stringBuffer{} and run under profiler
     // todo validate Measurement (not null, not empty string)
     // todo validate Fields should have at least one value
     // todo validate db name
+    // todo validate values (tags, fields) length <= 64KB
+    // todo escape strings (commas and spaces)
     // docs: https://influxdb.com/docs/v0.9/write_protocols/line.html
+    // docs: https://influxdb.com/docs/v0.9/write_protocols/write_syntax.html
     let write db point precision =
         let tags =
             point.Tags
@@ -223,6 +224,8 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
                     | Int64 v -> string v
                     | Double v -> v.ToString("0.0###############", invCulture)
                     | String v -> sprintf "\"%s\"" v
+                    | Bool true -> "t"
+                    | Bool false -> "f"
                 sprintf "%s=%s" k value)
             |> String.concat ","
 
