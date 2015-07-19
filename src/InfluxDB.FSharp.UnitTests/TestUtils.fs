@@ -5,11 +5,13 @@ open NUnit.Framework
 
 /// Assert values equal
 let (=?) (actual: 'a) (expected: 'a) =
-    Assert.That(actual, Is.EqualTo(expected))
+    Assert.That(actual, Is.EqualTo(expected), sprintf "Expected: %A\n    Actual: %A" expected actual)
 
 /// Assert enumerables equivalent
 let (=~?) (actual: #seq<_>) (expected: #seq<_>) =
-    Assert.That(actual, Is.EquivalentTo(expected))
+    Assert.That(actual, Is.EquivalentTo(expected), sprintf "Expected: %A\n    Actual: %A" expected actual)
+
+let inline stringf format (x: ^a) = (^a : (member ToString : string -> string) (x, format))
 
 [<AutoOpen>]
 module StringBuffer =

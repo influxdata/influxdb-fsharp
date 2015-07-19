@@ -44,6 +44,21 @@ module internal Seq =
             else None
         else None
 
+    let single (source: _ seq) =
+        use e = source.GetEnumerator()
+        if e.MoveNext() then
+            let first = e.Current
+            if e.MoveNext() = false then first
+            else failwithf "Expected seq with signle element, but there is more than one"
+        else failwithf "Expected seq with signle element, but there is no one"
+
+
+module internal Map =
+    open System.Collections.Generic
+
+    let ofDict (source: Dictionary<_,_>) =
+        let seq = source |> Seq.map (fun kvp -> kvp.Key, kvp.Value)
+        Map seq
 
 module internal Option =
     let inline ofNull value =

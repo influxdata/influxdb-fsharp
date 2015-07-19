@@ -7,46 +7,58 @@ open InfluxDB.FSharp.Choice
 open InfluxDB.FSharp.AsyncChoice
 
 module internal Contracts =
+    open System.Collections.Generic
     open System.Runtime.Serialization
+    open System.Runtime.Serialization.Json
 
-    module ShowDatabases =
-        [<DataContract>]
-        type Series =
-            {
-                [<field: DataMember(Name="name")>]
-                Name: string
+    [<DataContract>]
+    type Series =
+        {
+            [<field: DataMember(Name="name")>]
+            Name: string
 
-                [<field: DataMember(Name="columns")>]
-                Columns: string[]
+            [<field: DataMember(Name="tags")>]
+            Tags: Dictionary<string,string>
 
-                [<field: DataMember(Name="values")>]
-                Values: string[][]
-            }
+            [<field: DataMember(Name="columns")>]
+            Columns: string[]
 
-        [<DataContract>]
-        type Results =
-            {
-                [<field: DataMember(Name="series")>]
-                Series: Series[]
-            }
+            [<field: DataMember(Name="values")>]
+            Values: obj[][]
+        }
 
-        [<DataContract>]
-        type Response =
-            {
-                [<field: DataMember(Name="results")>]
-                Results: Results[]
-            }
+    [<DataContract>]
+    type Results =
+        {
+            [<field: DataMember(Name="series")>]
+            Series: Series[]
+
+            [<field: DataMember(Name="error")>]
+            Error: string
+        }
+
+    [<DataContract>]
+    type Response =
+        {
+            [<field: DataMember(Name="results")>]
+            Results: Results[]
+
+            [<field: DataMember(Name="error")>]
+            Error: string
+        }
+
+    let private settings = DataContractJsonSerializerSettings()
+    settings.UseSimpleDictionaryFormat <- true
 
     let deserialize<'a> (json: string) =
         Choice.attempt <| fun () ->
             use ms = new IO.MemoryStream(Text.Encoding.Unicode.GetBytes json)
-            let serializer = System.Runtime.Serialization.Json.DataContractJsonSerializer(typedefof<'a>)
+            let serializer = DataContractJsonSerializer(typedefof<'a>, settings)
             serializer.ReadObject(ms) :?> 'a
 
 type FieldValue =
-    | Int32 of int
-    | Int64 of int64
-    | Double of double
+    | Int of int64
+    | Float of double
     | String of string
     | Bool of bool
 
@@ -71,6 +83,7 @@ type Error =
     | TransportError of exn
     | HttpError of code: HttpStatusCode * msg: string option
     | ResponseParseError
+    | ServerError of string
     | OtherError of string
 
 type Credentials =
@@ -81,6 +94,20 @@ type Proxy =
     { Address: string
       Port: uint16
       Credentials: Credentials option }
+
+type Serie =
+    { Name: string // todo rename to Measurement?
+      Tags: Map<string,string>
+      Columns: string list
+      Values: FieldValue[][] }
+
+type ErrorMsg = string
+
+type QueryResult = Choice<Serie list, ErrorMsg>
+
+[<AutoOpen>]
+module Utils =
+    let inline ok _ = Ok ()
 
 // todo xml docs on public members
 // todo validate host
@@ -114,9 +141,15 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
                   | None -> None
         Fail (HttpError (code, msg))
 
-    let query cmd fn = asyncChoice {
+    let query db cmd mapOk = asyncChoice {
+        let withDb =
+            match db with
+            | Some db -> withQueryStringItem { name="db"; value=db }
+            | None -> id
+
         let! response =
             createRequest Get (url "query")
+            |> withDb
             |> withQueryStringItem { name="q"; value=cmd }
             |> getResponseAsync
             |> Async.Catch
@@ -124,7 +157,7 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
 
         return!
             match enum response.StatusCode with
-            | HttpStatusCode.OK -> fn response
+            | HttpStatusCode.OK -> mapOk response
             | _ -> buildError response
     }
 
@@ -142,8 +175,6 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
             | HttpStatusCode.NoContent -> Ok ()
             | _ -> buildError response
     }
-
-    let ok _ = Ok ()
 
     let ping () = asyncChoice {
         let sw = Diagnostics.Stopwatch()
@@ -167,10 +198,10 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
     }
 
     let showDbs () =
-        query "SHOW DATABASES" <| fun resp ->
+        query None "SHOW DATABASES" <| fun resp ->
             choice {
                 let! json = resp.EntityBody |> Choice.ofOption |> Choice.mapFail (fun _ -> OtherError "Response doesnt contain body")
-                let! response = Contracts.deserialize<Contracts.ShowDatabases.Response> json <!~> ResponseParseError
+                let! response = Contracts.deserialize<Contracts.Response> json <!~> ResponseParseError
                 return!
                     response.Results
                     |> Seq.trySingle
@@ -187,10 +218,10 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
             }
 
     let createDb name =
-        query (sprintf "CREATE DATABASE %s" name) ok
+        query None (sprintf "CREATE DATABASE %s" name) ok
 
     let dropDb name =
-        query (sprintf "DROP DATABASE %s" name) ok
+        query None (sprintf "DROP DATABASE %s" name) ok
 
     // todo escaping of tags and fields with tests (see docs)
     // todo sort tags by keys for perfomance (see docs)
@@ -205,7 +236,7 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
     // todo escape strings (commas and spaces)
     // docs: https://influxdb.com/docs/v0.9/write_protocols/line.html
     // docs: https://influxdb.com/docs/v0.9/write_protocols/write_syntax.html
-    let write db point precision =
+    let write db (point: Point) precision =
         let tags =
             point.Tags
             |> Map.toSeq
@@ -220,9 +251,8 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
             |> Seq.map (fun (k, v) ->
                 let value =
                     match v with
-                    | Int32 v -> string v
-                    | Int64 v -> string v
-                    | Double v -> v.ToString("0.0###############", invCulture)
+                    | Int v -> string v
+                    | Float v -> v.ToString("0.0###############", invCulture)
                     | String v -> sprintf "\"%s\"" v
                     | Bool true -> "t"
                     | Bool false -> "f"
@@ -245,6 +275,42 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
                       { name="precision"; value=precision } ]
         write query line
 
+    let doQuery db querystr =
+        query (Some db) querystr <| fun (resp: Response) ->
+            choice {
+                let! body = Choice.ofOption resp.EntityBody <!~> ResponseParseError
+                let! qresp = Contracts.deserialize<Contracts.Response> body <!~> ResponseParseError
+                let response =
+                    match Option.ofNull qresp.Error with
+                    | Some errormsg -> Fail (ServerError errormsg)
+                    | None ->
+                        qresp.Results
+                        |> Array.map (fun res ->
+                            match Option.ofNull res.Error with
+                            | Some errormsg -> Fail errormsg
+                            | None ->
+                                res.Series
+                                |> Array.map (fun ser ->
+                                    { Name = ser.Name
+                                      Tags = match Option.ofNull ser.Tags with
+                                             | Some tags -> Map.ofDict tags
+                                             | None -> Map.empty
+                                      Columns = ser.Columns |> Array.toList
+                                      Values = ser.Values |> Array.map (Array.map (function
+                                                                                   | :? int32 as v -> FieldValue.Int (int64 v)
+                                                                                   | :? int64 as v -> FieldValue.Int v
+                                                                                   | :? float as v -> FieldValue.Float v
+                                                                                   | :? string as v -> FieldValue.String v
+                                                                                   | :? bool as v -> FieldValue.Bool v
+                                                                                   | x -> failwithf "mappint for %O (%s) not implemented" x (x.GetType().FullName)))
+                                     })
+                                |> Array.toList
+                                |> Ok)
+                        |> Array.toList
+                        |> Ok
+                return! response
+            }
+
     member __.Ping() = ping()
 
     member __.ShowDatabases() = showDbs()
@@ -253,3 +319,5 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
 
     // todo write warning in xml doc about better usage of WriteMany
     member __.Write(db: Database, point: Point, precision: Precision) = write db point precision
+
+    member __.Query(db: Database, query: string) : Async<Choice<QueryResult list,Error>> = doQuery db query

@@ -41,6 +41,7 @@ let notFailed achoice =
 
 let machine = Environment.MachineName.ToLower()
 let fiddler = { Address = "localhost"; Port = 8888us; Credentials = None }
+let fmtTimestamp (value: DateTime) = stringf "yyyy-MM-ddThh:mm:ssZ" value
 
 [<SetUp>]
 let setup () =
@@ -82,14 +83,34 @@ let DropDatabase () =
     run (client.ShowDatabases()) =? []
 
 [<Test>]
-let Write () =
+let WritePoint_QueryItBack () =
     let db = integrationDbs.[0]
     let client = Client(machine, proxy = fiddler)
     notFailed (client.CreateDatabase db)
 
-    let point = { Measurement = "temperature"
-                  Tags = [ "machine", "unit42"; "type", "assembly" ] |> Map.ofList
-                  Fields = [ "internal", Int32 32; "external", Int32 100 ] |> Map.ofList
-                  Timestamp = DateTime.UtcNow }
+    let timestamp = DateTime.UtcNow
+    let internalVal = Int 32L
+    let externalVal = Int 100L
 
+    let point = { Measurement = "temperature"
+                  Tags = Map [ "machine", "unit42"; "type", "assembly" ]
+                  Fields = Map [ "internal", internalVal; "external", externalVal ]
+                  Timestamp = timestamp }
     notFailed (client.Write(db, point, Precision.Seconds))
+
+    let results = run (client.Query(db, "SELECT * FROM temperature"))
+    match results with
+    | result :: [] ->
+        match result with
+        | Ok series ->
+            let serie = Seq.single series
+            serie.Name =? point.Measurement
+            serie.Tags =? point.Tags
+            serie.Columns =? ["time"; "external"; "internal"]
+            let values = Seq.single serie.Values
+            values =? [| String (fmtTimestamp timestamp); externalVal; internalVal |]
+        | Fail err -> failwithf "Query result error: %s" err
+    | x -> failwithf "unexpected results: %A" x
+
+// todo tests on write errors
+// todo tests on query errors

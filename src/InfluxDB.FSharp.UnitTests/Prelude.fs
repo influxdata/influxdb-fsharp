@@ -11,6 +11,14 @@ let ``Seq.trySingle`` () =
     Seq.trySingle [] =? None
     Seq.trySingle [1; 2] =? None
 
+let testFn fn = TestDelegate (fun () -> fn() |> ignore)
+
+[<Test>]
+let ``Seq.single`` () =
+    Seq.single [1] =? 1
+    Assert.That(testFn (fun () -> Seq.single []), Throws.Exception.With.Message.EqualTo("Expected seq with signle element, but there is no one"))
+    Assert.That(testFn (fun () -> Seq.single [1; 2]), Throws.Exception.With.Message.EqualTo("Expected seq with signle element, but there is more than one"))
+
 let unixEpochStart = DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
 
 [<Test>]
