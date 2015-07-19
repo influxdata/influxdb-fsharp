@@ -63,6 +63,8 @@
     <None Include="Vagrantfile" />
     <Compile Include="TestUtils.fs" />
     <Compile Include="Tests.fs" />
+    <None Include="provision\setup.sh" />
+    <None Include="provision\dropalldb.sh" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib" />

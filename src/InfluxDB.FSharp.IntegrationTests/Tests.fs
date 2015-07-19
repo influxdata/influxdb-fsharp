@@ -9,25 +9,28 @@ open InfluxDB.FSharp.UnitTests
 // for running this tests you should have:
 //   1. install Vagrant & VirtualBox
 //   2. have ssh.exe in your %PATH% (from Windows Git distribution, for example)
-//   3. run  'vagrant up' in InfluxDB.FSharp.IntegrationTests directory
+//   3. run  'vagrant up' in src/InfluxDB.FSharp.IntegrationTests/ directory
 
 // todo tests on user/passwd
 // todo test: try create database that already exist
 
 let integrationDbs = [|1..3|] |> Array.map (sprintf "IntegrationTest%d")
 
-module InfluxCLI =
+module Vagrant =
     let run command =
-        let influxCliCmd = sprintf "/opt/influxdb/influx -execute '%s'" command
-        let vagrantArgs = sprintf "ssh -c \"%s\"" influxCliCmd
+        let vagrantArgs = sprintf "ssh -c \"%s\"" command
         let stdout, stderr = Process.run "vagrant" vagrantArgs
-
         stringBuffer {
             if not (String.IsNullOrWhiteSpace stdout) then
                 yield sprintf "vagrant stdout: %s" stdout
             if not (String.IsNullOrWhiteSpace stderr) then
                 yield sprintf "vagrant stderr: %s" stderr
         } |> build |> printfn "%s"
+
+module InfluxCLI =
+    let run command =
+        let influxCliCmd = sprintf "/opt/influxdb/influx -execute '%s'" command
+        Vagrant.run influxCliCmd
 
 let run achoice =
     match Async.RunSynchronously achoice with
@@ -45,9 +48,7 @@ let fmtTimestamp (value: DateTime) = stringf "yyyy-MM-ddThh:mm:ssZ" value
 
 [<SetUp>]
 let setup () =
-    // todo too slow, should think about this
-    for db in integrationDbs do
-        InfluxCLI.run (sprintf "DROP DATABASE %s" db)
+    Vagrant.run "./dropalldb.sh"
 
 [<Test>]
 let Ping () =
