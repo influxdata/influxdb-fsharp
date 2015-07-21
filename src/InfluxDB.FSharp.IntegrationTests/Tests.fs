@@ -52,7 +52,7 @@ let get = function Ok x -> x | Fail e -> failwithf "Unexpected Fail %+A" e
 
 let machine = Environment.MachineName.ToLower()
 let fiddler = { Address = "localhost"; Port = 8888us; Credentials = None }
-let fmtTimestamp (value: DateTime) = value.ToString("yyyy-MM-ddThh:mm:ssZ")
+let fmtTimestamp (value: DateTime) = value.ToString("yyyy-MM-ddTHH:mm:ssZ")
 
 [<SetUp>]
 let setup () =
