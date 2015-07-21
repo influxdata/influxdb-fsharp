@@ -1,7 +1,6 @@
 ﻿[<NUnit.Framework.TestFixture>]
 module InfluxDB.FSharp.UnitTests.Prelude
 
-open System
 open NUnit.Framework
 open InfluxDB.FSharp
 
@@ -19,28 +18,27 @@ let ``Seq.single`` () =
     Assert.That(testFn (fun () -> Seq.single []), Throws.Exception.With.Message.EqualTo("Expected seq with signle element, but there is no one"))
     Assert.That(testFn (fun () -> Seq.single [1; 2]), Throws.Exception.With.Message.EqualTo("Expected seq with signle element, but there is more than one"))
 
-let unixEpochStart = DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
-
-[<Test>]
-let ``DateTime.toUnixNanoseconds`` () =
-    DateTime.toUnixNanoseconds (unixEpochStart.AddMilliseconds 1.) =? uint64 1e6
-
 [<Test>]
 let ``DateTime.toUnixMicroseconds`` () =
-    DateTime.toUnixMicroseconds (unixEpochStart.AddMilliseconds 1.) =? uint64 1e3
+    DateTime.toUnixMicroseconds (DateTime.unixStartEpoch.AddMilliseconds 1.) =? int64 1e3
+    DateTime.toUnixMicroseconds (DateTime.unixStartEpoch.AddMilliseconds -1.) =? int64 -1e3
 
 [<Test>]
 let ``DateTime.toUnixMilliseconds`` () =
-    DateTime.toUnixMilliseconds (unixEpochStart.AddMilliseconds 1.) =? 1uL
+    DateTime.toUnixMilliseconds (DateTime.unixStartEpoch.AddMilliseconds 1.) =? 1L
+    DateTime.toUnixMilliseconds (DateTime.unixStartEpoch.AddMilliseconds -1.) =? -1L
 
 [<Test>]
 let ``DateTime.toUnixSeconds`` () =
-    DateTime.toUnixSeconds (unixEpochStart.AddSeconds 1.) =? 1uL
+    DateTime.toUnixSeconds (DateTime.unixStartEpoch.AddSeconds 1.) =? 1L
+    DateTime.toUnixSeconds (DateTime.unixStartEpoch.AddSeconds -1.) =? -1L
 
 [<Test>]
 let ``DateTime.toUnixMinutes`` () =
-    DateTime.toUnixMinutes (unixEpochStart.AddMinutes 1.) =? 1uL
+    DateTime.toUnixMinutes (DateTime.unixStartEpoch.AddMinutes 1.) =? 1L
+    DateTime.toUnixMinutes (DateTime.unixStartEpoch.AddMinutes -1.) =? -1L
 
 [<Test>]
 let ``DateTime.toUnixHours`` () =
-    DateTime.toUnixHours (unixEpochStart.AddHours 1.) =? 1uL
+    DateTime.toUnixHours (DateTime.unixStartEpoch.AddHours 1.) =? 1L
+    DateTime.toUnixHours (DateTime.unixStartEpoch.AddHours -1.) =? -1L

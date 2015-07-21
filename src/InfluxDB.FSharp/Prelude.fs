@@ -15,11 +15,27 @@ module internal Prelude =
     let inline konst value ignored = value
     let inline swap fn x y = fn y x
 
+    let inline isNull arg = Object.ReferenceEquals (null, arg)
+
     let choice = ChoiceBuilder ()
     let asyncChoice = AsyncChoiceBuilder ()
 
+    let invCulture = System.Globalization.CultureInfo.InvariantCulture
+
 
 module internal String =
+    let trim (str: string) =
+        if isNull str then
+            str
+        else
+            str.Trim()
+
+    let inline replace (oldsubstr: string) (newsubstr: string) (str: string) =
+        if isNull str then
+            str
+        else
+            str.Replace(oldsubstr, newsubstr)
+
     let excludePrefix prefix str =
         if String.IsNullOrEmpty str then str
         elif str.StartsWith prefix then str.[prefix.Length..]
@@ -60,6 +76,19 @@ module internal Map =
         let seq = source |> Seq.map (fun kvp -> kvp.Key, kvp.Value)
         Map seq
 
+    let keys (map: Map<_,_>) =
+        map |> Map.toSeq |> Seq.map fst
+
+    let values (map: Map<_,_>) =
+        map |> Map.toSeq |> Seq.map snd
+
+    let toString (map: Map<_,_>) =
+        let pairs =
+            Map.toSeq map
+            |> Seq.map ((<||) (sprintf "%O -> %O"))
+            |> String.concat "; "
+        sprintf "[%s]" pairs
+
 module internal Option =
     let inline ofNull value =
         if Object.ReferenceEquals(value, null) then None else Some value
@@ -71,7 +100,12 @@ module internal Choice =
         | Some result -> Ok result
         | None -> Fail ()
 
-    let mapFail (mapping : 'err1 -> 'err2) (value : Choice<'t, 'err1>) =
+    let map (mapping: 'a -> 'b) (value: Choice<'a,'err>) =
+        match value with
+        | Ok result -> Ok (mapping result)
+        | Fail error -> Fail error
+
+    let mapFail (mapping : 'err1 -> 'err2) (value: Choice<'t, 'err1>) =
         match value with
         | Ok result -> Ok result
         | Fail error -> Fail (mapping error)
@@ -81,6 +115,12 @@ module internal Choice =
             Ok (fn())
         with
         | exn -> Fail exn
+
+    let isResult = function Ok _ -> true | Fail _ -> false
+    let isFail = function Ok _ -> false | Fail _ -> true
+
+    let get value = match value with Ok x -> x | Fail _ -> invalidArg "value" "Cannot get result because the Choice`2 instance is an error value."
+    let getFail value = match value with Fail x -> x | Ok _ -> invalidArg "value" "Cannot get fail because the Choice`2 instance is an result value."
 
     let inline (<!>) value fn = mapFail fn value
     let inline (<!~>) value error = mapFail (konst error) value
@@ -94,40 +134,34 @@ module internal Async =
 
 
 module internal AsyncChoice =
-    let inline mapError (fn: 'b -> 'c) (value: Async<Choice<'a, 'b>>) : Async<Choice<'a, 'c>> =
+    let inline mapFail (fn: 'b -> 'c) (value: Async<Choice<'a, 'b>>) : Async<Choice<'a, 'c>> =
         value |> Async.map (Choice.mapFail fn)
 
-    let inline (<!!>) value fn = mapError fn value
+    let inline (<!!>) value fn = mapFail fn value
 
 
 module internal DateTime =
-    let private unixStartEpoch = DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+    let unixStartEpoch = DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
 
-    let private ticksPerMicrosecond = 10uL
-    let private nanosecondsPerTick = 100uL
-
-    /// number of nanoseconds since 1 January 1970 00:00:00 UTC (Unix Epoch)
-    let toUnixNanoseconds (value: DateTime) =
-        let ts = value.Subtract(unixStartEpoch)
-        uint64 ts.Ticks * nanosecondsPerTick
+    let private ticksPerMicrosecond = 10L
 
     /// number of microseconds since 1 January 1970 00:00:00 UTC (Unix Epoch)
     let toUnixMicroseconds (value: DateTime) =
         let ts = value.Subtract(unixStartEpoch)
-        uint64 ts.Ticks / ticksPerMicrosecond
+        int64 ts.Ticks / ticksPerMicrosecond
 
     /// number of milliseconds since 1 January 1970 00:00:00 UTC (Unix Epoch)
     let toUnixMilliseconds (value: DateTime) =
-        value.Subtract(unixStartEpoch).TotalMilliseconds |> uint64
+        value.Subtract(unixStartEpoch).TotalMilliseconds |> int64
 
     /// number of seconds since 1 January 1970 00:00:00 UTC (Unix Epoch)
     let toUnixSeconds (value: DateTime) =
-        value.Subtract(unixStartEpoch).TotalSeconds |> uint64
+        value.Subtract(unixStartEpoch).TotalSeconds |> int64
 
     /// number of minutes since 1 January 1970 00:00:00 UTC (Unix Epoch)
     let toUnixMinutes (value: DateTime) =
-        value.Subtract(unixStartEpoch).TotalMinutes |> uint64
+        value.Subtract(unixStartEpoch).TotalMinutes |> int64
 
     /// number of hours since 1 January 1970 00:00:00 UTC (Unix Epoch)
     let toUnixHours (value: DateTime) =
-        value.Subtract(unixStartEpoch).TotalHours |> uint64
+        value.Subtract(unixStartEpoch).TotalHours |> int64

@@ -59,6 +59,9 @@
     <Compile Include="AsyncChoiceBuilder.fs" />
     <Compile Include="ChoiceBuilder.fs" />
     <Compile Include="Prelude.fs" />
+    <Compile Include="Types.fs" />
+    <Compile Include="Point.fsi" />
+    <Compile Include="Point.fs" />
     <Compile Include="Client.fs" />
   </ItemGroup>
   <ItemGroup>

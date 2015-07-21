@@ -56,26 +56,6 @@ module internal Contracts =
             let serializer = DataContractJsonSerializer(typedefof<'a>, settings)
             serializer.ReadObject(ms) :?> 'a
 
-type FieldValue =
-    | Int of int64
-    | Float of double
-    | String of string
-    | Bool of bool
-
-type Point =
-    { Measurement: string
-      Tags: Map<string,string>
-      Fields: Map<string, FieldValue>
-      Timestamp: DateTime }
-
-type Precision =
-    | Nanoseconds = 0
-    | Microseconds = 1
-    | Milliseconds = 2
-    | Seconds = 3
-    | Minutes = 4
-    | Hours = 5
-
 type Database = string
 type InfluxDbVersion = string
 
@@ -128,8 +108,6 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
                                 | None -> ProxyCredentials.None }
             fun action url -> createRequest action url |> withProxy httpfsProxy
         | None -> createRequest
-
-    let invCulture = System.Globalization.CultureInfo.InvariantCulture
 
     let withQueryStringItems items request =
         items |> List.fold (swap withQueryStringItem) request
@@ -236,41 +214,18 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
     // todo escape strings (commas and spaces)
     // docs: https://influxdb.com/docs/v0.9/write_protocols/line.html
     // docs: https://influxdb.com/docs/v0.9/write_protocols/write_syntax.html
-    let write db (point: Point) precision =
-        let tags =
-            point.Tags
-            |> Map.toSeq
-            |> Seq.map ((<||) (sprintf "%s=%s"))
-            |> String.concat ","
-            |> function "" -> "" | s -> sprintf ",%s" s
-        let key = sprintf "%s%s" point.Measurement tags
-
-        let fields =
-            point.Fields
-            |> Map.toSeq
-            |> Seq.map (fun (k, v) ->
-                let value =
-                    match v with
-                    | Int v -> string v
-                    | Float v -> v.ToString("0.0###############", invCulture)
-                    | String v -> sprintf "\"%s\"" v
-                    | Bool true -> "t"
-                    | Bool false -> "f"
-                sprintf "%s=%s" k value)
-            |> String.concat ","
-
-        let timestamp, precision =
+    let write db (point: Point.T) precision =
+        let line = Point.toLine point precision
+        let precision =
             // todo reorder for perfmance?
             match precision with
-            | Precision.Nanoseconds -> DateTime.toUnixNanoseconds point.Timestamp, "n"
-            | Precision.Microseconds -> DateTime.toUnixMicroseconds point.Timestamp, "u"
-            | Precision.Milliseconds -> DateTime.toUnixMilliseconds point.Timestamp, "ms"
-            | Precision.Seconds -> DateTime.toUnixSeconds point.Timestamp, "s"
-            | Precision.Minutes -> DateTime.toUnixMinutes point.Timestamp, "m"
-            | Precision.Hours -> DateTime.toUnixHours point.Timestamp, "h"
-            | x -> failwithf "unknown precision %A" x
+            | Precision.Microseconds -> "u"
+            | Precision.Milliseconds -> "ms"
+            | Precision.Seconds -> "s"
+            | Precision.Minutes -> "m"
+            | Precision.Hours -> "h"
+            | x -> raise (NotImplementedException(sprintf "precision %A" x))
 
-        let line = sprintf "%s %s %d" key fields timestamp
         let query = [ { name="db"; value=db }
                       { name="precision"; value=precision } ]
         write query line
@@ -318,6 +273,6 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
     member __.DropDatabase(name: string) = dropDb name
 
     // todo write warning in xml doc about better usage of WriteMany
-    member __.Write(db: Database, point: Point, precision: Precision) = write db point precision
+    member __.Write(db: Database, point: Point.T, precision: Precision) = write db point precision
 
     member __.Query(db: Database, query: string) : Async<Choice<QueryResult list,Error>> = doQuery db query

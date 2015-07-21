@@ -1,17 +1,32 @@
 ﻿[<AutoOpen>]
 module InfluxDB.FSharp.UnitTests.TestUtils
 
+open System
 open NUnit.Framework
+open InfluxDB.FSharp
 
 /// Assert values equal
 let (=?) (actual: 'a) (expected: 'a) =
-    Assert.That(actual, Is.EqualTo(expected), sprintf "Expected: %A\n    Actual: %A" expected actual)
+    match box actual with
+    | :? String
+    | :? DateTime -> Assert.That(actual, Is.EqualTo(expected))
+    | _ -> Assert.That(actual, Is.EqualTo(expected), sprintf "Expected: %A\n  But was:  %+A" expected actual)
 
 /// Assert enumerables equivalent
 let (=~?) (actual: #seq<_>) (expected: #seq<_>) =
     Assert.That(actual, Is.EquivalentTo(expected), sprintf "Expected: %A\n    Actual: %A" expected actual)
 
-let inline stringf format (x: ^a) = (^a : (member ToString : string -> string) (x, format))
+let notFail =
+    function
+    | Ok x -> x
+    | Fail err -> failwithf "unexpectedly return Fail %+A" err
+
+let shouldNotFail choice = choice |> notFail |> ignore
+
+let shouldFailWith expectedErrors =
+    function
+    | Fail errs -> errs =? expectedErrors
+    | Ok x -> failwithf "unexpectedly return Ok %O" x
 
 [<AutoOpen>]
 module StringBuffer =
@@ -47,3 +62,15 @@ module StringBuffer =
             StringBuffer (fun b -> while p () do !f b)
 
     let stringBuffer = new StringBufferM ()
+
+
+type PointData =
+    { Measurement: Measurement
+      Tags: Map<string,string>
+      Fields: Map<string, FieldValue>
+      Timestamp: DateTime option }
+
+let tryCreateFrom (data: PointData) =
+    Point.create data.Measurement data.Tags data.Fields data.Timestamp
+
+let createFrom = tryCreateFrom >> notFail
