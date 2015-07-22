@@ -83,11 +83,14 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Inf
     let buildError (response: Response) =
         let code = enum response.StatusCode
         let msg = match response.EntityBody with
-                  | Some body -> Some (body.Trim())
+                  | Some body ->
+                      match Contracts.deserialize<Contracts.Response> body with
+                      | Ok resp -> Some resp.Error
+                      | Fail _ -> Some body
                   | None -> None
         Fail (HttpError (code, msg))
 
-    let query db cmd mapOk = asyncChoice {
+    let query db qstr mapOk = asyncChoice {
         let withDb =
             match db with
             | Some db -> withQueryStringItem { name="db"; value=db }
@@ -96,7 +99,7 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Inf
         let! response =
             createRequest Get (url "query")
             |> withDb
-            |> withQueryStringItem { name="q"; value=cmd }
+            |> withQueryStringItem { name="q"; value=qstr }
             |> getResponseAsync
             |> Async.Catch
             <!!> TransportError
@@ -163,8 +166,18 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Inf
                         | Fail e -> Fail e
             }
 
+    // todo: refact "<!~> ResponseParseError" somehow
     let createDb name =
-        query None (sprintf "CREATE DATABASE %s" name) ok
+        query None (sprintf "CREATE DATABASE %s" name) <| fun resp ->
+            choice {
+                let! json = resp.EntityBody |> Choice.ofOption <!~> ResponseParseError
+                let! resp = Contracts.deserialize<Contracts.Response> json <!~> ResponseParseError
+                let! result = resp.Results |> Seq.trySingleC <!~> ResponseParseError
+                return!
+                    match result.Error with
+                    | null -> Ok ()
+                    | errmsg -> Fail (Error.ServerError errmsg)
+            }
 
     let dropDb name =
         query None (sprintf "DROP DATABASE %s" name) ok
@@ -200,7 +213,7 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Inf
                         qresp.Results
                         |> Array.map (fun res ->
                             match Option.ofNull res.Error with
-                            | Some errormsg -> Fail (ErrorMsg errormsg)
+                            | Some errormsg -> Fail errormsg
                             | None ->
                                 res.Series
                                 |> Array.map (fun ser ->

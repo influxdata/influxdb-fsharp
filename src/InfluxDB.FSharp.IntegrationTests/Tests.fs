@@ -15,9 +15,7 @@ open InfluxDB.FSharp.UnitTests
 //   3. run 'vagrant up' in src/InfluxDB.FSharp.IntegrationTests/ directory
 
 // todo tests on user/passwd
-// todo test: try create database that already exist
 // todo tests on write errors
-// todo tests on query errors
 
 let integrationDbs = [|1..3|] |> Array.map (sprintf "IntegrationTest%d")
 
@@ -93,6 +91,16 @@ let CreateDatabase () =
     run (client.ShowDatabases()) =? [integrationDbs.[0]]
 
 [<Test>]
+let ``try CreateDatabase that already exist => error`` () =
+    let client = Client(machine, proxy = fiddler)
+    let db = integrationDbs.[0]
+    shouldNotFailA (client.CreateDatabase db)
+
+    match client.CreateDatabase db |> Async.RunSynchronously with
+    | Fail (ServerError "database already exists") -> ()
+    | x -> failwithf "Unexpected result: %+A" x
+
+[<Test>]
 let DropDatabase () =
     let client = Client(machine)
     shouldNotFailA (client.CreateDatabase integrationDbs.[0])
@@ -130,7 +138,7 @@ let ``write point then query it back`` () =
             serie.Columns =? ["time"; "external"; "internal"]
             let values = Seq.single serie.Values
             values =? [| String (fmtTimestamp timestamp); externalVal; internalVal |]
-        | Fail (ErrorMsg msg) -> failwithf "Query result error: %s" msg
+        | Fail msg -> failwithf "Query result error: %s" msg
     | x -> failwithf "unexpected results: %A" x
 
 [<Property(Arbitrary=[|typeof<Generators>|])>]
@@ -156,13 +164,35 @@ let ``write point then query it back [FsCheck]`` (data: PointData) =
             // todo check values
             //let values = Seq.single serie.Values
             //values =? [| String (fmtTimestamp timestamp); externalVal; internalVal |]
-        | Fail (ErrorMsg msg) -> failwithf "Query result error: %s" msg
+        | Fail msg -> failwithf "Query result error: %s" msg
     | x -> failwithf "unexpected results: %A" x
 
 [<Test>]
-let ``query have wrong syntax => error in result`` () =
-    let client = Client(machine, proxy = fiddler)
+let ``query have wrong syntax => error in response`` () =
+    let client = Client(machine)
     let result = client.Query("nevermind", "SELECT wrong wrong wrong") |> Async.RunSynchronously
+
+    match result with
+    | Fail (HttpError (HttpStatusCode.BadRequest, Some msg)) -> msg =? "error parsing query: found wrong, expected FROM at line 1, char 14"
+    | x -> failwithf "Unexpected result: %+A" x
+
+[<Test>]
+let ``query not exist db => error in response`` () =
+    let client = Client(machine)
+    let results = notFailA (client.Query("not_exist", "SELECT * FROM nevermind"))
+
+    match results with
+    | [ Fail msg ] -> msg =? "database not found: not_exist"
+    | x -> failwithf "Unexpected result: %+A" x
+
+// https://github.com/influxdb/influxdb.com/issues/137
+[<Test>]
+let ``query not exist serie => error in result`` () =
+    let client = Client(machine)
+    let db = integrationDbs.[0]
+    shouldNotFailA (client.CreateDatabase(db))
+
+    let result = client.Query(db, "SELECT * FROM notexistserie") |> Async.RunSynchronously
 
     match result with
     | Fail (HttpError (HttpStatusCode.BadRequest, Some msg)) -> msg =? "error parsing query: found wrong, expected FROM at line 1, char 14"

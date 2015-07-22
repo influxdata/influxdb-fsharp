@@ -35,7 +35,7 @@ type Serie =
       Columns: string list
       Values: FieldValue[][] }
 
-type ErrorMsg = ErrorMsg of string
+type ErrorMsg = string
 
 type QueryResult = Choice<Serie list, ErrorMsg>
 

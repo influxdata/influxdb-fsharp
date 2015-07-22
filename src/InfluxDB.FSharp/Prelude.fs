@@ -53,6 +53,38 @@ module internal String =
         else str + suffix
 
 
+module internal Choice =
+    let ofOption (value : 'T option) : Choice<'T, unit> =
+        match value with
+        | Some result -> Ok result
+        | None -> Fail ()
+
+    let map (mapping: 'a -> 'b) (value: Choice<'a,'err>) =
+        match value with
+        | Ok result -> Ok (mapping result)
+        | Fail error -> Fail error
+
+    let mapFail (mapping : 'err1 -> 'err2) (value: Choice<'t, 'err1>) =
+        match value with
+        | Ok result -> Ok result
+        | Fail error -> Fail (mapping error)
+
+    let attempt fn =
+        try
+            Ok (fn())
+        with
+        | exn -> Fail exn
+
+    let isResult = function Ok _ -> true | Fail _ -> false
+    let isFail = function Ok _ -> false | Fail _ -> true
+
+    let get value = match value with Ok x -> x | Fail _ -> invalidArg "value" "Cannot get result because the Choice`2 instance is an error value."
+    let getFail value = match value with Fail x -> x | Ok _ -> invalidArg "value" "Cannot get fail because the Choice`2 instance is an result value."
+
+    let inline (<!>) value fn = mapFail fn value
+    let inline (<!~>) value error = mapFail (konst error) value
+
+
 module internal Seq =
     let trySingle (source: _ seq) =
         use e = source.GetEnumerator()
@@ -61,6 +93,9 @@ module internal Seq =
             if e.MoveNext() = false then Some first
             else None
         else None
+
+    let trySingleC (source: _ seq) =
+        trySingle source |> Choice.ofOption
 
     let single (source: _ seq) =
         use e = source.GetEnumerator()
@@ -94,38 +129,6 @@ module internal Map =
 module internal Option =
     let inline ofNull value =
         if Object.ReferenceEquals(value, null) then None else Some value
-
-
-module internal Choice =
-    let ofOption (value : 'T option) : Choice<'T, unit> =
-        match value with
-        | Some result -> Ok result
-        | None -> Fail ()
-
-    let map (mapping: 'a -> 'b) (value: Choice<'a,'err>) =
-        match value with
-        | Ok result -> Ok (mapping result)
-        | Fail error -> Fail error
-
-    let mapFail (mapping : 'err1 -> 'err2) (value: Choice<'t, 'err1>) =
-        match value with
-        | Ok result -> Ok result
-        | Fail error -> Fail (mapping error)
-
-    let attempt fn =
-        try
-            Ok (fn())
-        with
-        | exn -> Fail exn
-
-    let isResult = function Ok _ -> true | Fail _ -> false
-    let isFail = function Ok _ -> false | Fail _ -> true
-
-    let get value = match value with Ok x -> x | Fail _ -> invalidArg "value" "Cannot get result because the Choice`2 instance is an error value."
-    let getFail value = match value with Fail x -> x | Ok _ -> invalidArg "value" "Cannot get fail because the Choice`2 instance is an result value."
-
-    let inline (<!>) value fn = mapFail fn value
-    let inline (<!~>) value error = mapFail (konst error) value
 
 
 module internal Async =
