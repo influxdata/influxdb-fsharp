@@ -56,43 +56,11 @@ module internal Contracts =
             let serializer = DataContractJsonSerializer(typedefof<'a>, settings)
             serializer.ReadObject(ms) :?> 'a
 
-type Database = string
-type InfluxDbVersion = string
-
-type Error =
-    | TransportError of exn
-    | HttpError of code: HttpStatusCode * msg: string option
-    | ResponseParseError
-    | ServerError of string
-    | OtherError of string
-
-type Credentials =
-    { Username: string
-      Password: string }
-
-type Proxy =
-    { Address: string
-      Port: uint16
-      Credentials: Credentials option }
-
-type Serie =
-    { Name: string // todo rename to Measurement?
-      Tags: Map<string,string>
-      Columns: string list
-      Values: FieldValue[][] }
-
-type ErrorMsg = string
-
-type QueryResult = Choice<Serie list, ErrorMsg>
-
-[<AutoOpen>]
-module Utils =
-    let inline ok _ = Ok ()
 
 // todo xml docs on public members
 // todo validate host
 // todo validate proxy
-type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Proxy) =
+type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: InfluxDB.FSharp.Proxy) =
     let port = defaultArg port 8086us
     let baseUri = Uri(sprintf "http://%s:%d" host port)
     let url (path: string) = Uri(baseUri, path).AbsoluteUri
@@ -201,20 +169,10 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
     let dropDb name =
         query None (sprintf "DROP DATABASE %s" name) ok
 
-    // todo escaping of tags and fields with tests (see docs)
-    // todo sort tags by keys for perfomance (see docs)
-    // todo check point has at least one field
-    // todo double to string should have at least one 0 after .
-    // todo surround string field values with " with escaping
-    // todo rewrite with stringBuffer{} and run under profiler
-    // todo validate Measurement (not null, not empty string)
-    // todo validate Fields should have at least one value
     // todo validate db name
-    // todo validate values (tags, fields) length <= 64KB
-    // todo escape strings (commas and spaces)
-    // docs: https://influxdb.com/docs/v0.9/write_protocols/line.html
-    // docs: https://influxdb.com/docs/v0.9/write_protocols/write_syntax.html
-    let write db (point: Point.T) precision =
+    // todo sort tags by keys for perfomance (see docs)
+    // todo rewrite with stringBuffer{} and run under profiler
+    let doWrite db (point: Point.T) precision =
         let line = Point.toLine point precision
         let precision =
             // todo reorder for perfmance?
@@ -242,7 +200,7 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
                         qresp.Results
                         |> Array.map (fun res ->
                             match Option.ofNull res.Error with
-                            | Some errormsg -> Fail errormsg
+                            | Some errormsg -> Fail (ErrorMsg errormsg)
                             | None ->
                                 res.Series
                                 |> Array.map (fun ser ->
@@ -273,6 +231,6 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Pro
     member __.DropDatabase(name: string) = dropDb name
 
     // todo write warning in xml doc about better usage of WriteMany
-    member __.Write(db: Database, point: Point.T, precision: Precision) = write db point precision
+    member __.Write(db: Database, point: Point.T, precision: Precision) = doWrite db point precision
 
     member __.Query(db: Database, query: string) : Async<Choice<QueryResult list,Error>> = doQuery db query

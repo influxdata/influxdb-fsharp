@@ -2,6 +2,7 @@
 module InfluxDB.FSharp.IntegrationTests.Tests
 
 open System
+open System.Net
 open NUnit.Framework
 open FsCheck
 open FsCheck.NUnit
@@ -15,6 +16,8 @@ open InfluxDB.FSharp.UnitTests
 
 // todo tests on user/passwd
 // todo test: try create database that already exist
+// todo tests on write errors
+// todo tests on query errors
 
 let integrationDbs = [|1..3|] |> Array.map (sprintf "IntegrationTest%d")
 
@@ -43,10 +46,17 @@ let run achoice =
     | Ok x -> x
     | Fail e -> failwithf "Failed with: %A" e
 
-let notFailed achoice =
+let notFailA achoice =
     match Async.RunSynchronously achoice with
-    | Ok () -> ()
+    | Ok x -> x
     | Fail e -> failwithf "Failed with: %A" e
+
+let failA achoice =
+    match Async.RunSynchronously achoice with
+    | Ok x -> failwithf "Unexpectedly Ok with: %+A" x
+    | Fail e -> e
+
+let shouldNotFailA achoice = achoice |> notFailA |> ignore
 
 let get = function Ok x -> x | Fail e -> failwithf "Unexpected Fail %+A" e
 
@@ -63,39 +73,39 @@ let Ping () =
     let client = Client(machine)
     let elapsed, version = run (client.Ping())
     printfn "ping elapsed: %O, version: %s" elapsed version
-    version =? "0.9.1"
+    Assert.That(version, Is.StringStarting("0.9.1"))
 
 [<Test>]
 let ShowDatabases () =
     let client = Client(machine)
     run (client.ShowDatabases()) =~? []
 
-    notFailed (client.CreateDatabase(integrationDbs.[0]))
+    shouldNotFailA (client.CreateDatabase(integrationDbs.[0]))
     run (client.ShowDatabases()) =~? [integrationDbs.[0]]
 
-    notFailed (client.CreateDatabase(integrationDbs.[1]))
+    shouldNotFailA (client.CreateDatabase(integrationDbs.[1]))
     run (client.ShowDatabases()) =~? integrationDbs.[0..1]
 
 [<Test>]
 let CreateDatabase () =
     let client = Client(machine)
-    notFailed (client.CreateDatabase integrationDbs.[0])
+    shouldNotFailA (client.CreateDatabase integrationDbs.[0])
     run (client.ShowDatabases()) =? [integrationDbs.[0]]
 
 [<Test>]
 let DropDatabase () =
     let client = Client(machine)
-    notFailed (client.CreateDatabase integrationDbs.[0])
+    shouldNotFailA (client.CreateDatabase integrationDbs.[0])
     run (client.ShowDatabases()) =? [integrationDbs.[0]]
 
-    notFailed (client.DropDatabase integrationDbs.[0])
+    shouldNotFailA (client.DropDatabase integrationDbs.[0])
     run (client.ShowDatabases()) =? []
 
 [<Test>]
-let WritePoint_QueryItBack_Example () =
+let ``write point then query it back`` () =
     let db = integrationDbs.[0]
     let client = Client(machine)
-    notFailed (client.CreateDatabase db)
+    shouldNotFailA (client.CreateDatabase db)
 
     let timestamp = DateTime.UtcNow
     let internalVal = Int 32L
@@ -107,7 +117,7 @@ let WritePoint_QueryItBack_Example () =
                  Timestamp = Some timestamp }
     let point = createFrom data
 
-    notFailed (client.Write(db, point, Precision.Seconds))
+    shouldNotFailA (client.Write(db, point, Precision.Seconds))
 
     let results = run (client.Query(db, "SELECT * FROM temperature"))
     match results with
@@ -120,17 +130,18 @@ let WritePoint_QueryItBack_Example () =
             serie.Columns =? ["time"; "external"; "internal"]
             let values = Seq.single serie.Values
             values =? [| String (fmtTimestamp timestamp); externalVal; internalVal |]
-        | Fail err -> failwithf "Query result error: %s" err
+        | Fail (ErrorMsg msg) -> failwithf "Query result error: %s" msg
     | x -> failwithf "unexpected results: %A" x
 
 [<Property(Arbitrary=[|typeof<Generators>|])>]
-let WritePoint_QueryItBack_QuickCheck (data: PointData) =
+[<Explicit>]
+let ``write point then query it back [FsCheck]`` (data: PointData) =
     let db = integrationDbs.[0]
     let client = Client(machine, proxy = fiddler)
-    notFailed (client.CreateDatabase db)
+    shouldNotFailA (client.CreateDatabase db)
 
     let point = createFrom data
-    notFailed (client.Write(db, point, Precision.Seconds))
+    shouldNotFailA (client.Write(db, point, Precision.Seconds))
 
     let results = run (client.Query(db, sprintf "SELECT * FROM %s" data.Measurement))
     match results with
@@ -142,12 +153,17 @@ let WritePoint_QueryItBack_QuickCheck (data: PointData) =
             serie.Tags =? data.Tags
             serie.Columns =? ["time"] @ (data.Fields |> Map.toList |> List.map fst)
 
-            //todo check values
+            // todo check values
             //let values = Seq.single serie.Values
             //values =? [| String (fmtTimestamp timestamp); externalVal; internalVal |]
-        | Fail err -> failwithf "Query result error: %s" err
+        | Fail (ErrorMsg msg) -> failwithf "Query result error: %s" msg
     | x -> failwithf "unexpected results: %A" x
 
+[<Test>]
+let ``query have wrong syntax => error in result`` () =
+    let client = Client(machine, proxy = fiddler)
+    let result = client.Query("nevermind", "SELECT wrong wrong wrong") |> Async.RunSynchronously
 
-// todo tests on write errors
-// todo tests on query errors
+    match result with
+    | Fail (HttpError (HttpStatusCode.BadRequest, Some msg)) -> msg =? "error parsing query: found wrong, expected FROM at line 1, char 14"
+    | x -> failwithf "Unexpected result: %+A" x
