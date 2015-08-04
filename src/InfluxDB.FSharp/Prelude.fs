@@ -4,8 +4,8 @@ open System
 
 [<AutoOpen>]
 module internal Prelude =
-    let inline Ok a: Choice<_, _> = Choice1Of2 a
-    let inline Fail a: Choice<_, _> = Choice2Of2 a
+    let Ok a: Choice<_, _> = Choice1Of2 a
+    let Fail a: Choice<_, _> = Choice2Of2 a
 
     let inline ok _ = Ok ()
 
@@ -23,6 +23,11 @@ module internal Prelude =
     let asyncChoice = AsyncChoiceBuilder ()
 
     let invCulture = System.Globalization.CultureInfo.InvariantCulture
+
+
+module internal Array =
+    let emptyIfNull array =
+        if isNull array then Array.empty else array
 
 
 module internal String =

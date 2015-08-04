@@ -167,20 +167,23 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Inf
             }
 
     // todo: refact "<!~> ResponseParseError" somehow
+    let checkForError resp =
+        choice {
+            let! json = resp.EntityBody |> Choice.ofOption <!~> ResponseParseError
+            let! resp = Contracts.deserialize<Contracts.Response> json <!~> ResponseParseError
+            let! result = resp.Results |> Seq.trySingleC <!~> ResponseParseError
+            return!
+                match result.Error with
+                | null -> Ok ()
+                | errmsg -> Fail (Error.ServerError errmsg)
+        }
+
     let createDb name =
-        query None (sprintf "CREATE DATABASE %s" name) <| fun resp ->
-            choice {
-                let! json = resp.EntityBody |> Choice.ofOption <!~> ResponseParseError
-                let! resp = Contracts.deserialize<Contracts.Response> json <!~> ResponseParseError
-                let! result = resp.Results |> Seq.trySingleC <!~> ResponseParseError
-                return!
-                    match result.Error with
-                    | null -> Ok ()
-                    | errmsg -> Fail (Error.ServerError errmsg)
-            }
+        query None (sprintf "CREATE DATABASE %s" name) checkForError
 
     let dropDb name =
-        query None (sprintf "DROP DATABASE %s" name) ok
+        query None (sprintf "DROP DATABASE %s" name) checkForError
+
 
     // todo validate db name
     // todo sort tags by keys for perfomance (see docs)
@@ -216,6 +219,7 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Inf
                             | Some errormsg -> Fail errormsg
                             | None ->
                                 res.Series
+                                |> Array.emptyIfNull
                                 |> Array.map (fun ser ->
                                     { Name = ser.Name
                                       Tags = match Option.ofNull ser.Tags with

@@ -3,10 +3,10 @@
 echo "Provisioning virtual machine..."
 
 echo "Download InfluxDB deb package..."
-wget -q https://s3.amazonaws.com/influxdb/influxdb_nightly_amd64.deb
+wget -q https://s3.amazonaws.com/influxdb/influxdb_0.9.2_amd64.deb
 
 echo "Install InfluxDB..."
-sudo dpkg -i influxdb_nightly_amd64.deb
+sudo dpkg -i influxdb_0.9.2_amd64.deb
 
 echo "Start InfluxDB daemon..."
 sudo /etc/init.d/influxdb start

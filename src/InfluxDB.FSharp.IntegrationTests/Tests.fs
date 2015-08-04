@@ -81,14 +81,14 @@ let fixtureSetup() = Vagrant.up()
 let setup () = Vagrant.exec "./dropalldb.sh"
 
 [<Test>]
-let Ping () =
+let ping () =
     let client = Client(machine)
     let elapsed, version = run (client.Ping())
     printfn "ping elapsed: %O, version: %s" elapsed version
     Assert.That(version, Is.StringStarting "0.9")
 
 [<Test>]
-let ShowDatabases () =
+let ``show databases`` () =
     let client = Client(machine)
     run (client.ShowDatabases()) =~? []
 
@@ -99,13 +99,13 @@ let ShowDatabases () =
     run (client.ShowDatabases()) =~? integrationDbs.[0..1]
 
 [<Test>]
-let CreateDatabase () =
+let ``create database`` () =
     let client = Client(machine)
     shouldNotFailA (client.CreateDatabase integrationDbs.[0])
     run (client.ShowDatabases()) =? [integrationDbs.[0]]
 
 [<Test>]
-let ``try CreateDatabase that already exist => error`` () =
+let ``try create database that already exist => error`` () =
     let client = Client(machine, proxy = fiddler)
     let db = integrationDbs.[0]
     shouldNotFailA (client.CreateDatabase db)
@@ -115,7 +115,7 @@ let ``try CreateDatabase that already exist => error`` () =
     | x -> failwithf "Unexpected result: %+A" x
 
 [<Test>]
-let DropDatabase () =
+let ``drop of exiting database`` () =
     let client = Client(machine)
     shouldNotFailA (client.CreateDatabase integrationDbs.[0])
     run (client.ShowDatabases()) =? [integrationDbs.[0]]
@@ -124,9 +124,19 @@ let DropDatabase () =
     run (client.ShowDatabases()) =? []
 
 [<Test>]
+let ``try drop not existing database => error`` () =
+    let client = Client(machine)
+    run (client.ShowDatabases()) =? []
+
+    match Async.RunSynchronously (client.DropDatabase "not_exist") with
+    | Ok () -> failwithf "Unexpectedly Ok"
+    | Fail (ServerError msg) -> msg =? "database not found: not_exist"
+    | Fail x -> failwithf "Wrong Error %+A" x
+
+[<Test>]
 let ``write point then query it back`` () =
     let db = integrationDbs.[0]
-    let client = Client(machine)
+    let client = Client(machine, proxy = fiddler)
     shouldNotFailA (client.CreateDatabase db)
 
     let timestamp = DateTime.UtcNow
@@ -155,11 +165,12 @@ let ``write point then query it back`` () =
         | Fail msg -> failwithf "Query result error: %s" msg
     | x -> failwithf "unexpected results: %A" x
 
-[<Property(Arbitrary=[|typeof<Generators>|])>]
 [<Explicit>]
+[<Property(Arbitrary=[|typeof<Generators>|])>]
 let ``write point then query it back [FsCheck]`` (data: PointData) =
     let db = integrationDbs.[0]
     let client = Client(machine, proxy = fiddler)
+    //client.DropDatabase db
     shouldNotFailA (client.CreateDatabase db)
 
     let point = createFrom data
@@ -191,7 +202,7 @@ let ``query have wrong syntax => error in response`` () =
     | x -> failwithf "Unexpected result: %+A" x
 
 [<Test>]
-let ``query not exist db => error in response`` () =
+let ``query not existing db => error`` () =
     let client = Client(machine)
     let results = notFailA (client.Query("not_exist", "SELECT * FROM nevermind"))
 
@@ -201,7 +212,7 @@ let ``query not exist db => error in response`` () =
 
 // https://github.com/influxdb/influxdb.com/issues/137
 [<Test>]
-let ``query not exist serie => error in result`` () =
+let ``query not exist serie => empty series list in response`` () =
     let client = Client(machine)
     let db = integrationDbs.[0]
     shouldNotFailA (client.CreateDatabase(db))
@@ -209,5 +220,5 @@ let ``query not exist serie => error in result`` () =
     let result = client.Query(db, "SELECT * FROM notexistserie") |> Async.RunSynchronously
 
     match result with
-    | Fail (HttpError (HttpStatusCode.BadRequest, Some msg)) -> msg =? "error parsing query: found wrong, expected FROM at line 1, char 14"
+    | Ok result -> result =? [ Ok [] ]
     | x -> failwithf "Unexpected result: %+A" x
