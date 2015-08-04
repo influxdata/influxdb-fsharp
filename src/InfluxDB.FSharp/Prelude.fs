@@ -19,9 +19,6 @@ module internal Prelude =
 
     let inline isNull arg = Object.ReferenceEquals (null, arg)
 
-    let choice = ChoiceBuilder ()
-    let asyncChoice = AsyncChoiceBuilder ()
-
     let invCulture = System.Globalization.CultureInfo.InvariantCulture
 
 
@@ -131,9 +128,10 @@ module internal Map =
             |> String.concat "; "
         sprintf "[%s]" pairs
 
+
 module internal Option =
     let inline ofNull value =
-        if Object.ReferenceEquals(value, null) then None else Some value
+        if isNull value then None else Some value
 
 
 module internal Async =
