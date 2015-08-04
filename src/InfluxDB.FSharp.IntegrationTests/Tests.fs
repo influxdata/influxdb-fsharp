@@ -9,10 +9,9 @@ open FsCheck.NUnit
 open InfluxDB.FSharp
 open InfluxDB.FSharp.UnitTests
 
-// for running this tests you should have:
+// for running this tests you should:
 //   1. install Vagrant & VirtualBox
 //   2. have ssh.exe in your %PATH% (from Windows Git distribution, for example)
-//   3. run 'vagrant up' in src/InfluxDB.FSharp.IntegrationTests/ directory
 
 // todo tests on user/passwd
 // todo tests on write errors
@@ -20,9 +19,19 @@ open InfluxDB.FSharp.UnitTests
 let integrationDbs = [|1..3|] |> Array.map (sprintf "IntegrationTest%d")
 
 module Vagrant =
-    let run command =
+    let private run = Process.run "../../" "vagrant"
+
+    let up () =
+        match run "up" (TimeSpan.FromMinutes 3.) with
+        | 0, _, _ -> ()
+        | x, out, err -> failwithf "vagrant up exit with %d\nstdout: %s\nstderr: %s" x out err
+
+    let destroy () =
+        run "destroy -f" (TimeSpan.FromSeconds 30.) |> ignore
+
+    let exec command =
         let vagrantArgs = sprintf "ssh -c \"%s\"" command
-        let stdout, stderr = Process.run "vagrant" vagrantArgs
+        let _, stdout, stderr = run vagrantArgs (TimeSpan.FromSeconds 20.)
         stringBuffer {
             if not (String.IsNullOrWhiteSpace stdout) then
                 yield sprintf "vagrant stdout: %s" stdout
@@ -33,7 +42,7 @@ module Vagrant =
 module InfluxCLI =
     let run command =
         let influxCliCmd = sprintf "/opt/influxdb/influx -execute '%s'" command
-        Vagrant.run influxCliCmd
+        Vagrant.exec influxCliCmd
 
 type Generators =
     static member PointData() =
@@ -62,16 +71,21 @@ let machine = Environment.MachineName.ToLower()
 let fiddler = { Address = "localhost"; Port = 8888us; Credentials = None }
 let fmtTimestamp (value: DateTime) = value.ToString("yyyy-MM-ddTHH:mm:ssZ")
 
+[<TestFixtureSetUp>]
+let fixtureSetup() = Vagrant.up()
+
+//[<TestFixtureTearDown>]
+//let fixtureTeardown() = Vagrant.destroy()
+
 [<SetUp>]
-let setup () =
-    Vagrant.run "./dropalldb.sh"
+let setup () = Vagrant.exec "./dropalldb.sh"
 
 [<Test>]
 let Ping () =
     let client = Client(machine)
     let elapsed, version = run (client.Ping())
     printfn "ping elapsed: %O, version: %s" elapsed version
-    Assert.That(version, Is.StringStarting("0.9.1"))
+    Assert.That(version, Is.StringStarting "0.9")
 
 [<Test>]
 let ShowDatabases () =
