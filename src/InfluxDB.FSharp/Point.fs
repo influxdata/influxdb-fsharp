@@ -116,7 +116,7 @@ module Point =
         <*> validateFields fields
         <*> validateTimestamp timestamp
 
-    let toLine point precision =
+    let toLine precision point =
         let tags =
             point.Tags
             |> Map.toSeq

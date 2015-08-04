@@ -184,25 +184,35 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Inf
     let dropDb name =
         query None (sprintf "DROP DATABASE %s" name) checkForError
 
+    let toStr =
+        // todo reorder for perfmance?
+        function
+        | Precision.Microseconds -> "u"
+        | Precision.Milliseconds -> "ms"
+        | Precision.Seconds -> "s"
+        | Precision.Minutes -> "m"
+        | Precision.Hours -> "h"
+        | x -> raise (NotImplementedException(sprintf "precision %A" x))
 
     // todo validate db name
     // todo sort tags by keys for perfomance (see docs)
     // todo rewrite with stringBuffer{} and run under profiler
     let doWrite db (point: Point.T) precision =
-        let line = Point.toLine point precision
-        let precision =
-            // todo reorder for perfmance?
-            match precision with
-            | Precision.Microseconds -> "u"
-            | Precision.Milliseconds -> "ms"
-            | Precision.Seconds -> "s"
-            | Precision.Minutes -> "m"
-            | Precision.Hours -> "h"
-            | x -> raise (NotImplementedException(sprintf "precision %A" x))
-
+        let line = Point.toLine precision point
+        let precision = toStr precision
         let query = [ { name="db"; value=db }
                       { name="precision"; value=precision } ]
         write query line
+
+    let doWriteMany db (points: Point.T[]) precision =
+        let lines =
+            points
+            |> Array.map (Point.toLine precision)
+            |> String.concat "\n"
+        let precision = toStr precision
+        let query = [ { name="db"; value=db }
+                      { name="precision"; value=precision } ]
+        write query lines
 
     let doQuery db querystr =
         query (Some db) querystr <| fun (resp: Response) ->
@@ -230,9 +240,10 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Inf
                                                                                    | :? int32 as v -> FieldValue.Int (int64 v)
                                                                                    | :? int64 as v -> FieldValue.Int v
                                                                                    | :? float as v -> FieldValue.Float v
+                                                                                   | :? decimal as v -> FieldValue.Float (float v)
                                                                                    | :? string as v -> FieldValue.String v
                                                                                    | :? bool as v -> FieldValue.Bool v
-                                                                                   | x -> failwithf "mappint for %O (%s) not implemented" x (x.GetType().FullName)))
+                                                                                   | x -> failwithf "mapping for %O (%s) not implemented" x (x.GetType().FullName)))
                                      })
                                 |> Array.toList
                                 |> Ok)
@@ -249,5 +260,6 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Inf
 
     // todo write warning in xml doc about better usage of WriteMany
     member __.Write(db: Database, point: Point.T, precision: Precision) = doWrite db point precision
+    member __.WriteMany(db: Database, points: Point.T[], precision: Precision) = doWriteMany db points precision
 
     member __.Query(db: Database, query: string) : Async<Choice<QueryResult list,Error>> = doQuery db query

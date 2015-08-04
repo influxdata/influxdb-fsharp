@@ -63,7 +63,7 @@ let ``timestamp validation`` () =
 let ``escaping`` () =
     let toLine data =
         let point = createFrom data
-        Point.toLine point Precision.Seconds
+        Point.toLine Precision.Seconds point
 
     // measurement
     toLine { correct with Measurement = "cpu,01" } =? @"cpu\,01,host=server01,region=uwest value=3.0 1420070400"

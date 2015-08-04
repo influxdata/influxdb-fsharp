@@ -106,7 +106,7 @@ let ``create database`` () =
 
 [<Test>]
 let ``try create database that already exist => error`` () =
-    let client = Client(machine, proxy = fiddler)
+    let client = Client(machine)
     let db = integrationDbs.[0]
     shouldNotFailA (client.CreateDatabase db)
 
@@ -136,7 +136,7 @@ let ``try drop not existing database => error`` () =
 [<Test>]
 let ``write point then query it back`` () =
     let db = integrationDbs.[0]
-    let client = Client(machine, proxy = fiddler)
+    let client = Client(machine)
     shouldNotFailA (client.CreateDatabase db)
 
     let timestamp = DateTime.UtcNow
@@ -191,6 +191,54 @@ let ``write point then query it back [FsCheck]`` (data: PointData) =
             //values =? [| String (fmtTimestamp timestamp); externalVal; internalVal |]
         | Fail msg -> failwithf "Query result error: %s" msg
     | x -> failwithf "unexpected results: %A" x
+
+[<Test>]
+let ``write many points then query it back`` () =
+    let db = integrationDbs.[0]
+    let client = Client(machine)
+    shouldNotFailA (client.CreateDatabase db)
+
+    let timestamp = DateTime.UtcNow
+    let temperatureInternal = Int 1L
+    let temperatureExternal = Int 100L
+    let cpuLoad = Float 0.64
+
+    let temperatureData = { Measurement = "temperature"
+                            Tags = Map [ "machine", "unit42"; "type", "assembly" ]
+                            Fields = Map [ "internal", temperatureInternal; "external", temperatureExternal ]
+                            Timestamp = Some timestamp }
+    let cpuData = { Measurement = "cpu_load_short"
+                    Tags = Map [ "host", "server01"; "region", "us-west" ]
+                    Fields = Map [ "value", cpuLoad ]
+                    Timestamp = Some timestamp }
+    let points = createFromMany [| temperatureData; cpuData |]
+
+    shouldNotFailA (client.WriteMany(db, points, Precision.Seconds))
+
+    let querySingle query =
+        let results = run (client.Query(db, query))
+        match results with
+        | result :: [] ->
+            match result with
+            | Ok series -> Seq.single series
+            | Fail msg -> failwithf "Query result error: %s" msg
+        | x -> failwithf "unexpected results: %A" x
+
+    // check temperature
+    let temperatureSerie = querySingle "SELECT * FROM temperature"
+    temperatureSerie.Name =? temperatureData.Measurement
+    temperatureSerie.Tags =? temperatureData.Tags
+    temperatureSerie.Columns =? ["time"; "external"; "internal"]
+    let temperatureValues = Seq.single temperatureSerie.Values
+    temperatureValues =? [| String (fmtTimestamp timestamp); temperatureExternal; temperatureInternal |]
+
+    // check cpu_load_short
+    let cpuSerie = querySingle "SELECT * FROM cpu_load_short"
+    cpuSerie.Name =? cpuData.Measurement
+    cpuSerie.Tags =? cpuData.Tags
+    cpuSerie.Columns =? ["time"; "value"]
+    let cpuValues = Seq.single cpuSerie.Values
+    cpuValues =? [| String (fmtTimestamp timestamp); cpuLoad |]
 
 [<Test>]
 let ``query have wrong syntax => error in response`` () =

@@ -74,3 +74,4 @@ let tryCreateFrom (data: PointData) =
     Point.create data.Measurement data.Tags data.Fields data.Timestamp
 
 let createFrom = tryCreateFrom >> notFail
+let createFromMany = Array.map createFrom
