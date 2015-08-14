@@ -39,14 +39,23 @@ type ErrorMsg = string
 
 type QueryResult = Choice<Serie list, ErrorMsg>
 
+type ProxyCredentials =
+    | No
+    | Default
+    | Custom of Credentials
+
 type Proxy =
     { Address: string
       Port: uint16
-      Credentials: Credentials option }
+      Credentials: ProxyCredentials }
+
+type HttpError =
+    | BadStatusCode of code: HttpStatusCode * msg: string option
+    | OtherError of string * exn option
+    with static member otherError str = OtherError (str, None)
+         static member otherErrorExn (e: exn) = OtherError (e.Message, Some e)
 
 type Error =
-    | TransportError of exn
-    | HttpError of code: HttpStatusCode * msg: string option
-    | ResponseParseError
+    | HttpError of HttpError
+    | ResponseParseError of string
     | ServerError of string
-    | OtherError of string

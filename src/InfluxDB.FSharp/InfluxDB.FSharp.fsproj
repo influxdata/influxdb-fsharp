@@ -53,22 +53,18 @@
   </Choose>
   <Import Project="$(FSharpTargetsPath)" />
   <ItemGroup>
-    <Content Include="packages.config" />
     <Content Include="app.config" />
     <Compile Include="InternalsVisibleTo.fs" />
     <Compile Include="Prelude.fs" />
     <Compile Include="AsyncChoiceBuilder.fs" />
     <Compile Include="ChoiceBuilder.fs" />
     <Compile Include="Types.fs" />
+    <Compile Include="Http.fs" />
     <Compile Include="Point.fsi" />
     <Compile Include="Point.fs" />
     <Compile Include="Client.fs" />
   </ItemGroup>
   <ItemGroup>
-    <Reference Include="HttpClient">
-      <HintPath>..\packages\Http.fs.1.5.1\lib\net40\HttpClient.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
     <Reference Include="mscorlib" />
     <Reference Include="FSharp.Core, Version=$(TargetFSharpCoreVersion), Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
       <Private>True</Private>

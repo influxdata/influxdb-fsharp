@@ -21,6 +21,8 @@ module internal Prelude =
 
     let invCulture = System.Globalization.CultureInfo.InvariantCulture
 
+    [<Measure>] type msec
+
 
 module internal Array =
     let emptyIfNull array =
@@ -135,13 +137,22 @@ module internal Option =
 
 
 module internal Async =
+    open System.Threading.Tasks
+
     let map (mapping : 'T -> 'U) (value : Async<'T>) : Async<'U> = async {
         let! x = value
         return mapping x
     }
 
+    /// Await void Task, rethrow exception if it occurs
+    let AwaitTaskVoid (task: Task) =
+        task.ContinueWith<unit> (fun t -> if t.IsFaulted then raise t.Exception) |> Async.AwaitTask
+
 
 module internal AsyncChoice =
+    let inline map (fn: 'a -> 'b) (value: Async<Choice<'a, 'c>>) : Async<Choice<'b, 'c>> =
+        value |> Async.map (Choice.map fn)
+
     let inline mapFail (fn: 'b -> 'c) (value: Async<Choice<'a, 'b>>) : Async<Choice<'a, 'c>> =
         value |> Async.map (Choice.mapFail fn)
 

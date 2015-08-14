@@ -68,7 +68,7 @@ let shouldNotFailA achoice = achoice |> notFailA |> ignore
 let get = function Ok x -> x | Fail e -> failwithf "Unexpected Fail %+A" e
 
 let machine = Environment.MachineName.ToLower()
-let fiddler = { Address = "localhost"; Port = 8888us; Credentials = None }
+let fiddler = { Address = "localhost"; Port = 8888us; Credentials = ProxyCredentials.No }
 let fmtTimestamp (value: DateTime) = value.ToString("yyyy-MM-ddTHH:mm:ssZ")
 
 [<TestFixtureSetUp>]
@@ -246,7 +246,7 @@ let ``query have wrong syntax => error in response`` () =
     let result = client.Query("nevermind", "SELECT wrong wrong wrong") |> Async.RunSynchronously
 
     match result with
-    | Fail (HttpError (HttpStatusCode.BadRequest, Some msg)) -> msg =? "error parsing query: found wrong, expected FROM at line 1, char 14"
+    | Fail (HttpError (BadStatusCode (HttpStatusCode.BadRequest, Some msg))) -> msg =? "error parsing query: found wrong, expected FROM at line 1, char 14"
     | x -> failwithf "Unexpected result: %+A" x
 
 [<Test>]

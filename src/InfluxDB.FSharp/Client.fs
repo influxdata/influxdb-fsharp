@@ -2,9 +2,9 @@
 
 open System
 open System.Net
-open HttpClient
 open InfluxDB.FSharp.Choice
 open InfluxDB.FSharp.AsyncChoice
+open InfluxDB.FSharp.Http
 
 module internal Contracts =
     open System.Collections.Generic
@@ -63,85 +63,69 @@ module internal Contracts =
 type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: InfluxDB.FSharp.Proxy) =
     let port = defaultArg port 8086us
     let baseUri = Uri(sprintf "http://%s:%d" host port)
-    let url (path: string) = Uri(baseUri, path).AbsoluteUri
+    let uri (path: string) = Uri(baseUri, path)
 
     let createRequest =
         match proxy with
-        | Some proxy ->
-            let httpfsProxy: HttpClient.Proxy =
-                { Address = proxy.Address
-                  Port = int proxy.Port
-                  Credentials = match proxy.Credentials with
-                                | Some creds -> ProxyCredentials.Custom { username = creds.Username; password = creds.Password }
-                                | None -> ProxyCredentials.None }
-            fun action url -> createRequest action url |> withProxy httpfsProxy
-        | None -> createRequest
-
-    let withQueryStringItems items request =
-        items |> List.fold (swap withQueryStringItem) request
+        | Some proxy -> fun ``method`` url -> Http.createRequest ``method`` url |> Http.withProxy proxy
+        | None -> Http.createRequest
 
     let buildError (response: Response) =
-        let code = enum response.StatusCode
-        let msg = match response.EntityBody with
+        let msg = match response.Body with
                   | Some body ->
                       match Contracts.deserialize<Contracts.Response> body with
                       | Ok resp -> Some resp.Error
                       | Fail _ -> Some body
                   | None -> None
-        Fail (HttpError (code, msg))
+        Fail (BadStatusCode (response.StatusCode, msg))
 
     let query db qstr mapOk = asyncChoice {
         let withDb =
             match db with
-            | Some db -> withQueryStringItem { name="db"; value=db }
+            | Some db -> withQueryStringItem "db" db
             | None -> id
 
         let! response =
-            createRequest Get (url "query")
+            createRequest Get (uri "query")
             |> withDb
-            |> withQueryStringItem { name="q"; value=qstr }
-            |> getResponseAsync
-            |> Async.Catch
-            <!!> TransportError
+            |> withQueryStringItem "q" qstr
+            |> getResponse
+            <!!> HttpError
 
         return!
-            match enum response.StatusCode with
+            match response.StatusCode with
             | HttpStatusCode.OK -> mapOk response
-            | _ -> buildError response
+            | _ -> buildError response <!> HttpError
     }
 
     let write query body = asyncChoice {
         let! response =
-            createRequest Post (url "write")
+            createRequest (Post body) (uri "write")
             |> withQueryStringItems query
-            |> withBody body
-            |> getResponseAsync
-            |> Async.Catch
-            <!!> TransportError
+            |> getResponse
+            <!!> HttpError
 
         return!
-            match enum response.StatusCode with
+            match response.StatusCode with
             | HttpStatusCode.NoContent -> Ok ()
-            | _ -> buildError response
+            | _ -> buildError response <!> HttpError
     }
 
     let ping () = asyncChoice {
         let sw = Diagnostics.Stopwatch()
         do sw.Start()
-
         let! response =
-            createRequest Get (url "ping")
-            |> getResponseAsync
-            |> Async.Catch
-            <!!> TransportError
+            createRequest Get (uri "ping")
+            |> getResponse
+            <!!> HttpError
         do sw.Stop()
 
         let! version =
             response.Headers
-            |> Map.tryFind (NonStandard "X-Influxdb-Version")
+            |> Map.tryFind "X-Influxdb-Version"
             |> function
             | Some version -> Ok version
-            | None -> Fail (OtherError "No version header in response")
+            | None -> Fail (ResponseParseError "No version header in response")
 
         return sw.Elapsed, version
     }
@@ -149,14 +133,14 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Inf
     let showDbs () =
         query None "SHOW DATABASES" <| fun resp ->
             choice {
-                let! json = resp.EntityBody |> Choice.ofOption |> Choice.mapFail (fun _ -> OtherError "Response doesnt contain body")
-                let! response = Contracts.deserialize<Contracts.Response> json <!~> ResponseParseError
+                let! json = resp.Body |> Choice.ofOption <!~> ResponseParseError "Response doesnt contain body"
+                let! response = Contracts.deserialize<Contracts.Response> json <!~> ResponseParseError "Cant parse response contract"
                 return!
                     response.Results
                     |> Seq.trySingle
                     |> Option.bind (fun r -> Seq.trySingle r.Series)
                     |> Choice.ofOption
-                    |> Choice.mapFail (konst ResponseParseError)
+                    <!~> ResponseParseError "TODO"
                     |> function
                        | Ok series ->
                             match Option.ofNull series.Values with
@@ -169,9 +153,9 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Inf
     // todo: refact "<!~> ResponseParseError" somehow
     let checkForError resp =
         choice {
-            let! json = resp.EntityBody |> Choice.ofOption <!~> ResponseParseError
-            let! resp = Contracts.deserialize<Contracts.Response> json <!~> ResponseParseError
-            let! result = resp.Results |> Seq.trySingleC <!~> ResponseParseError
+            let! json = resp.Body |> Choice.ofOption <!~> ResponseParseError "TODO"
+            let! resp = Contracts.deserialize<Contracts.Response> json <!~> ResponseParseError "TODO"
+            let! result = resp.Results |> Seq.trySingleC <!~> ResponseParseError "TODO"
             return!
                 match result.Error with
                 | null -> Ok ()
@@ -200,8 +184,7 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Inf
     let doWrite db (point: Point.T) precision =
         let line = Point.toLine precision point
         let precision = toStr precision
-        let query = [ { name="db"; value=db }
-                      { name="precision"; value=precision } ]
+        let query = [ "db", db; "precision", precision ]
         write query line
 
     let doWriteMany db (points: Point.T[]) precision =
@@ -210,15 +193,14 @@ type Client (host: string, ?port: uint16, ?credentials: Credentials, ?proxy: Inf
             |> Array.map (Point.toLine precision)
             |> String.concat "\n"
         let precision = toStr precision
-        let query = [ { name="db"; value=db }
-                      { name="precision"; value=precision } ]
+        let query = [ "db", db; "precision", precision ]
         write query lines
 
     let doQuery db querystr =
         query (Some db) querystr <| fun (resp: Response) ->
             choice {
-                let! body = Choice.ofOption resp.EntityBody <!~> ResponseParseError
-                let! qresp = Contracts.deserialize<Contracts.Response> body <!~> ResponseParseError
+                let! body = Choice.ofOption resp.Body <!~> ResponseParseError "TODO"
+                let! qresp = Contracts.deserialize<Contracts.Response> body <!~> ResponseParseError "TODO"
                 let response =
                     match Option.ofNull qresp.Error with
                     | Some errormsg -> Fail (ServerError errormsg)
