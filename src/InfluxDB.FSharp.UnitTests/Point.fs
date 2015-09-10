@@ -73,14 +73,14 @@ let ``escaping`` () =
     toLine { correct with Tags = Map [ "host name", "server,01" ] } =? @"cpu,host\ name=server\,01 value=3.0 1420070400"
 
     // fields
-    toLine { correct with Fields = Map [ "key to,escape", Int 1L ] } =? @"cpu,host=server01,region=uwest key\ to\,escape=1 1420070400"
+    toLine { correct with Fields = Map [ "key to,escape", Int 1L ] } =? @"cpu,host=server01,region=uwest key\ to\,escape=1i 1420070400"
     toLine { correct with Fields = Map [ "key", String "double\"quotes" ] } =? "cpu,host=server01,region=uwest key=\"double\\\"quotes\" 1420070400"
 
     // complex examples from influxdb docs
     toLine { Measurement = "total disk free"
              Tags = Map [ "volumes", "/net,/home,/" ]
              Fields = Map [ "value", Int 442221834240L ]
-             Timestamp = correct.Timestamp } =? @"total\ disk\ free,volumes=/net\,/home\,/ value=442221834240 1420070400"
+             Timestamp = correct.Timestamp } =? @"total\ disk\ free,volumes=/net\,/home\,/ value=442221834240i 1420070400"
 
     toLine { Measurement = "\"measurement with quotes\""
              Tags = Map [ "tag key with spaces", "tag,value,with\"commas\"" ]
