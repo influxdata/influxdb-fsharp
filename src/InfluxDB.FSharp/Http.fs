@@ -4,8 +4,6 @@ open System
 open System.Net
 open InfluxDB.FSharp.AsyncChoice
 
-do if ServicePointManager.Expect100Continue then ServicePointManager.Expect100Continue <- false
-
 type HttpMethod =
   | Get
   | Post of body: string
@@ -58,6 +56,7 @@ let private toWebRequest request =
         b.Uri
 
     let webRequest = HttpWebRequest.Create(uri) :?> HttpWebRequest
+    webRequest.ServicePoint.Expect100Continue <- false
     webRequest.AllowAutoRedirect <- true
     webRequest.Timeout <- int request.Timeout
 
