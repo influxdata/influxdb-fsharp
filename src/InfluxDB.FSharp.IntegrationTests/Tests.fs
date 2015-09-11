@@ -142,6 +142,8 @@ let ``write point then query it back`` () =
     let timestamp = DateTime.UtcNow
     let internalVal = Int 32L
     let externalVal = Int 100L
+    let machine = String "unit42"
+    let typ = String "assembly"
 
     let data = { Measurement = "temperature"
                  Tags = Map [ "machine", "unit42"; "type", "assembly" ]
@@ -158,15 +160,17 @@ let ``write point then query it back`` () =
         | Ok series ->
             let serie = Seq.single series
             serie.Name =? data.Measurement
-            serie.Tags =? data.Tags
-            serie.Columns =? ["time"; "external"; "internal"]
+            serie.Tags =? Map.empty     // query without GROUP BY, all tags transformed into values
+            serie.Columns =? ["time"; "external"; "internal"; "machine"; "type"]
             let values = Seq.single serie.Values
-            values =? [| String (fmtTimestamp timestamp); externalVal; internalVal |]
+            values =? [| String (fmtTimestamp timestamp); externalVal; internalVal; machine; typ |]
         | Fail msg -> failwithf "Query result error: %s" msg
     | x -> failwithf "unexpected results: %A" x
 
 [<Explicit>]
 [<Property(Arbitrary=[|typeof<Generators>|])>]
+// this test generates some data that influxdb 0.9.2 start hangs
+// I should try it on later versions and report possible issues
 let ``write point then query it back [FsCheck]`` (data: PointData) =
     let db = integrationDbs.[0]
     let client = Client(machine, proxy = fiddler)
@@ -201,14 +205,19 @@ let ``write many points then query it back`` () =
     let timestamp = DateTime.UtcNow
     let temperatureInternal = Int 1L
     let temperatureExternal = Int 100L
+    let machine = "unit42"
+    let typ = "assembly"
+
     let cpuLoad = Float 0.64
+    let host = "server01"
+    let region = "us-west"
 
     let temperatureData = { Measurement = "temperature"
-                            Tags = Map [ "machine", "unit42"; "type", "assembly" ]
+                            Tags = Map [ "machine", machine; "type", typ ]
                             Fields = Map [ "internal", temperatureInternal; "external", temperatureExternal ]
                             Timestamp = Some timestamp }
     let cpuData = { Measurement = "cpu_load_short"
-                    Tags = Map [ "host", "server01"; "region", "us-west" ]
+                    Tags = Map [ "host", host; "region", region ]
                     Fields = Map [ "value", cpuLoad ]
                     Timestamp = Some timestamp }
     let points = createFromMany [| temperatureData; cpuData |]
@@ -227,18 +236,49 @@ let ``write many points then query it back`` () =
     // check temperature
     let temperatureSerie = querySingle "SELECT * FROM temperature"
     temperatureSerie.Name =? temperatureData.Measurement
-    temperatureSerie.Tags =? temperatureData.Tags
-    temperatureSerie.Columns =? ["time"; "external"; "internal"]
+    temperatureSerie.Tags =? Map.empty
+    temperatureSerie.Columns =? ["time"; "external"; "internal"; "machine"; "type"]
     let temperatureValues = Seq.single temperatureSerie.Values
-    temperatureValues =? [| String (fmtTimestamp timestamp); temperatureExternal; temperatureInternal |]
+    temperatureValues =? [| String (fmtTimestamp timestamp); temperatureExternal; temperatureInternal; String machine; String typ |]
 
     // check cpu_load_short
     let cpuSerie = querySingle "SELECT * FROM cpu_load_short"
     cpuSerie.Name =? cpuData.Measurement
-    cpuSerie.Tags =? cpuData.Tags
-    cpuSerie.Columns =? ["time"; "value"]
+    cpuSerie.Tags =? Map.empty
+    cpuSerie.Columns =? ["time"; "host"; "region"; "value"]
     let cpuValues = Seq.single cpuSerie.Values
-    cpuValues =? [| String (fmtTimestamp timestamp); cpuLoad |]
+    cpuValues =? [| String (fmtTimestamp timestamp); String host; String region; cpuLoad |]
+
+[<Test>]
+let ``query with GROUP BY tags => tags appears in result tags property, but not in values``() =
+    let db = integrationDbs.[0]
+    let client = Client(machine)
+    shouldNotFailA (client.CreateDatabase db)
+
+    let timestamp = DateTime.UtcNow
+    let internalVal = Int 32L
+    let externalVal = Int 100L
+
+    let data = { Measurement = "temperature"
+                 Tags = Map [ "machine", "unit42"; "type", "assembly" ]
+                 Fields = Map [ "internal", internalVal; "external", externalVal ]
+                 Timestamp = Some timestamp }
+    let point = createFrom data
+
+    shouldNotFailA (client.Write(db, point, Precision.Seconds))
+
+    let results = run (client.Query(db, "SELECT * FROM temperature GROUP BY machine,type"))
+    match results with
+    | result :: [] ->
+        match result with
+        | Ok series ->
+            let serie = Seq.single series
+            serie.Tags =? data.Tags
+            serie.Columns =? ["time"; "external"; "internal"]
+            let values = Seq.single serie.Values
+            values =? [| String (fmtTimestamp timestamp); externalVal; internalVal |]
+        | Fail msg -> failwithf "Query result error: %s" msg
+    | x -> failwithf "unexpected results: %A" x
 
 [<Test>]
 let ``query have wrong syntax => error in response`` () =
